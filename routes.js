@@ -18,9 +18,34 @@
 const express = require('express');
 const router = express.Router();
 
-// Import our Airtable and OpenAI helper functions
+// Import Airtable functions (no OpenAI - we format responses directly for speed)
 const { getDoctors, checkAppointments, bookAppointment } = require('./airtable');
-const { formatAvailability, formatBookingConfirmation } = require('./openai');
+
+// ============================================================
+// Fast response formatters - no OpenAI call, instant response
+// ============================================================
+function formatAvailabilityFast(availabilityData, date) {
+  const dateObj = new Date(date + 'T00:00:00');
+  const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  const available = availabilityData.filter(d => d.freeSlots && d.freeSlots.length > 0);
+  if (available.length === 0) {
+    return `I'm sorry, there are no available slots on ${formattedDate}. Would you like to try a different date?`;
+  }
+
+  const parts = available.map(d => {
+    const slots = d.freeSlots.slice(0, 5).map(s => s.replace(':00', '').replace(' AM', ' AM').replace(' PM', ' PM'));
+    return `${d.doctor} at ${slots.join(', ')}`;
+  });
+
+  return `On ${formattedDate} we have: ${parts.join('. ')}. Which time works best for you?`;
+}
+
+function formatConfirmationFast({ patientName, doctor, date, time }) {
+  const dateObj = new Date(date + 'T00:00:00');
+  const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return `Your appointment is confirmed! ${patientName}, you're booked with ${doctor} on ${formattedDate} at ${time}. We look forward to seeing you!`;
+}
 
 
 // ============================================================
@@ -184,9 +209,8 @@ async function handleCheckAvailability({ doctor, date }) {
     });
   }
 
-  // Use OpenAI to format this into natural speech
-  const formattedResponse = await formatAvailability(availabilityData, date);
-  return formattedResponse;
+  // Format directly - no OpenAI call for speed
+  return formatAvailabilityFast(availabilityData, date);
 }
 
 
@@ -226,15 +250,8 @@ async function handleBookAppointment({ patient_name, patient_phone, doctor, date
     time: time
   });
 
-  // Generate a warm confirmation message with OpenAI
-  const confirmation = await formatBookingConfirmation({
-    patientName: patient_name,
-    doctor: doctor,
-    date: date,
-    time: time
-  });
-
-  return confirmation;
+  // Format confirmation directly - no OpenAI call for speed
+  return formatConfirmationFast({ patientName: patient_name, doctor, date, time });
 }
 
 

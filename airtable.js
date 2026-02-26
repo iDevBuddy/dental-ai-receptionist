@@ -14,6 +14,12 @@ const base = new Airtable({
   apiKey: process.env.AIRTABLE_API_KEY
 }).base(process.env.AIRTABLE_BASE_ID);
 
+// Simple cache for doctors list - doctors don't change often
+// This saves ~500ms on every availability check
+let _doctorsCache = null;
+let _cacheTime = null;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 
 // ============================================================
 // getDoctors()
@@ -21,6 +27,12 @@ const base = new Airtable({
 // Returns: array of doctor objects
 // ============================================================
 async function getDoctors() {
+  // Return cached data if still fresh — avoids Airtable round trip
+  if (_doctorsCache && _cacheTime && (Date.now() - _cacheTime < CACHE_TTL)) {
+    console.log(`📋 Doctors from cache (${_doctorsCache.length} doctors)`);
+    return _doctorsCache;
+  }
+
   const doctors = [];
 
   // .select() fetches records, .eachPage() loops through them
@@ -36,10 +48,14 @@ async function getDoctors() {
         availableHours: record.get('Available_Hours') || '9:00 AM - 5:00 PM'
       });
     });
-    fetchNextPage(); // Get next page if there are more records
+    fetchNextPage();
   });
 
-  console.log(`📋 Found ${doctors.length} doctors in Airtable`);
+  // Save to cache
+  _doctorsCache = doctors;
+  _cacheTime = Date.now();
+
+  console.log(`📋 Found ${doctors.length} doctors in Airtable (cached)`);
   return doctors;
 }
 
