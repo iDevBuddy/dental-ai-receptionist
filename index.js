@@ -13,7 +13,7 @@ const express = require('express');
 const app = express();
 
 // This middleware lets Express read JSON data from incoming requests
-// Vapi sends JSON, so this is required
+// Retell AI sends JSON, so this is required
 app.use(express.json());
 
 // Import our webhook routes
@@ -41,7 +41,7 @@ app.listen(PORT, () => {
   console.log('✅ Server started successfully!');
   console.log(`   Running on port: ${PORT}`);
   console.log(`   Health check:    http://localhost:${PORT}/`);
-  console.log(`   Webhook URL:     http://localhost:${PORT}/webhook/vapi`);
+  console.log(`   Webhook URL:     http://localhost:${PORT}/webhook/retell`);
   console.log('');
   console.log('🦷 Sarah is ready to answer calls!');
   console.log('');

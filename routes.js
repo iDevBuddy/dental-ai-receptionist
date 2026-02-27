@@ -1,18 +1,18 @@
 // ============================================================
 // routes.js - The brain of the server
 //
-// This file handles the /webhook/vapi endpoint.
-// Vapi calls this URL when:
-//   1. Sarah needs to check doctor availability
-//   2. Sarah needs to book an appointment
-//   3. A call ends (for logging)
+// This file handles the /webhook/retell endpoint.
+// Retell AI calls this URL when:
+//   1. Sarah needs to check doctor availability  (tool_call_invocation)
+//   2. Sarah needs to book an appointment        (tool_call_invocation)
+//   3. A call ends                               (call_ended)
 //
 // HOW TOOL CALLS WORK:
 //   Patient says: "I want to book an appointment on Friday"
 //   Sarah (AI) decides to call the "check_availability" tool
-//   Vapi sends a POST request to /webhook/vapi
+//   Retell sends a POST request to /webhook/retell
 //   This file reads the request, calls Airtable, and returns the result
-//   Vapi gives the result back to Sarah, who speaks it to the patient
+//   Retell gives the result back to Sarah, who speaks it to the patient
 // ============================================================
 
 const express = require('express');
@@ -20,6 +20,7 @@ const router = express.Router();
 
 // Import Airtable functions (no OpenAI - we format responses directly for speed)
 const { getDoctors, checkAppointments, bookAppointment } = require('./airtable');
+
 
 // ============================================================
 // Fast response formatters - no OpenAI call, instant response
@@ -34,7 +35,7 @@ function formatAvailabilityFast(availabilityData, date) {
   }
 
   const parts = available.map(d => {
-    const slots = d.freeSlots.slice(0, 5).map(s => s.replace(':00', '').replace(' AM', ' AM').replace(' PM', ' PM'));
+    const slots = d.freeSlots.slice(0, 5);
     return `${d.doctor} at ${slots.join(', ')}`;
   });
 
@@ -49,97 +50,105 @@ function formatConfirmationFast({ patientName, doctor, date, time }) {
 
 
 // ============================================================
-// POST /webhook/vapi
-// The main webhook endpoint - Vapi sends everything here
+// POST /webhook/retell
+// The main webhook endpoint - Retell AI sends everything here
+//
+// Retell sends different "event" types:
+//   - "tool_call_invocation" → Sarah wants data from us
+//   - "call_ended"           → call finished, good for logging
+//   - "call_started"         → call just connected
 // ============================================================
-router.post('/webhook/vapi', async (req, res) => {
-  const message = req.body.message;
+router.post('/webhook/retell', async (req, res) => {
+  const body = req.body;
+  const event = body.event;
 
-  // If there's no message, something is wrong
-  if (!message) {
-    console.error('⚠️  Received request with no message body');
-    return res.status(400).json({ error: 'No message provided' });
+  // If there's no event, something is wrong
+  if (!event) {
+    console.error('⚠️  Received request with no event type');
+    return res.status(400).json({ error: 'No event provided' });
   }
 
-  console.log(`\n📞 Vapi event received: "${message.type}"`);
+  console.log(`\n📞 Retell event received: "${event}"`);
+
 
   // ============================================================
   // HANDLE TOOL CALLS
   // This is the main event - when Sarah needs data from us
+  // Retell sends ONE tool call at a time (unlike Vapi which batched them)
   // ============================================================
-  if (message.type === 'tool-calls') {
-    const toolCallList = message.toolCallList || [];
-    const results = [];
+  if (event === 'tool_call_invocation') {
+    const toolName = body.name;
+    const toolCallId = body.tool_call_id;
 
-    // Loop through each tool call (usually just one at a time)
-    for (const toolCall of toolCallList) {
-      const toolName = toolCall.function.name;
+    // Retell sends arguments as a plain object (already parsed - no JSON.parse needed)
+    const args = body.arguments || {};
 
-      // Parse the arguments Sarah sent us
-      // Arguments come as a JSON string, so we parse them
-      let args = {};
-      try {
-        args = JSON.parse(toolCall.function.arguments || '{}');
-      } catch (e) {
-        args = {};
+    console.log(`🔧 Tool: "${toolName}" | Args:`, args);
+
+    let result = '';
+
+    try {
+      // Route to the correct handler based on tool name
+      if (toolName === 'check_availability') {
+        result = await handleCheckAvailability(args);
+
+      } else if (toolName === 'book_appointment') {
+        result = await handleBookAppointment(args);
+
+      } else {
+        // Unknown tool name
+        console.warn(`⚠️  Unknown tool called: ${toolName}`);
+        result = 'I apologize, I could not process that request. Please try again.';
       }
 
-      console.log(`🔧 Tool: "${toolName}" | Args:`, args);
-
-      let result = '';
-
-      try {
-        // Route to the correct handler based on tool name
-        if (toolName === 'check_availability') {
-          result = await handleCheckAvailability(args);
-
-        } else if (toolName === 'book_appointment') {
-          result = await handleBookAppointment(args);
-
-        } else {
-          // Unknown tool name
-          console.warn(`⚠️  Unknown tool called: ${toolName}`);
-          result = 'I apologize, I could not process that request. Please try again.';
-        }
-
-      } catch (error) {
-        // Something went wrong - tell Sarah gracefully
-        console.error(`❌ Error in tool "${toolName}":`, error.message);
-        result = 'I apologize, there was a technical issue. Let me transfer you to our staff.';
-      }
-
-      // Add result to our response list
-      results.push({
-        toolCallId: toolCall.id,  // Must match the incoming tool call ID
-        result: result
-      });
+    } catch (error) {
+      // Something went wrong - tell Sarah gracefully
+      console.error(`❌ Error in tool "${toolName}":`, error.message);
+      result = 'I apologize, there was a technical issue. Let me transfer you to our staff.';
     }
 
-    // Send all results back to Vapi
-    return res.json({ results });
+    // -------------------------------------------------------
+    // Retell response format for tool calls:
+    // { tool_call_id: "...", content: "the result string" }
+    // -------------------------------------------------------
+    console.log(`✅ Returning result to Retell`);
+    return res.json({
+      tool_call_id: toolCallId,
+      content: result
+    });
   }
 
 
   // ============================================================
-  // HANDLE END OF CALL REPORT
+  // HANDLE CALL ENDED
   // Triggered when the call ends - good for logging/analytics
   // ============================================================
-  if (message.type === 'end-of-call-report') {
-    const duration = message.durationSeconds || 0;
-    const summary = message.summary || 'No summary available';
-    const callId = message.call?.id || 'unknown';
+  if (event === 'call_ended') {
+    const call = body.call || {};
+    const callId = call.call_id || 'unknown';
+    const durationMs = call.duration_ms || 0;
+    const durationSec = Math.round(durationMs / 1000);
 
     console.log(`\n📊 Call ended`);
     console.log(`   Call ID:  ${callId}`);
-    console.log(`   Duration: ${duration} seconds`);
-    console.log(`   Summary:  ${summary}`);
+    console.log(`   Duration: ${durationSec} seconds`);
 
     return res.json({ received: true });
   }
 
 
+  // ============================================================
+  // HANDLE CALL STARTED
+  // ============================================================
+  if (event === 'call_started') {
+    const call = body.call || {};
+    console.log(`📞 New call started: ${call.call_id}`);
+    return res.json({ received: true });
+  }
+
+
   // For any other event type, just acknowledge it
-  console.log(`   (No handler for this event type, acknowledging)`);
+  console.log(`   (No handler for event "${event}", acknowledging)`);
   res.json({ received: true });
 });
 
@@ -147,7 +156,7 @@ router.post('/webhook/vapi', async (req, res) => {
 // ============================================================
 // handleCheckAvailability({ doctor, date })
 //
-// 1. Gets all doctors from Airtable
+// 1. Gets all doctors from Airtable (cached for 5 min)
 // 2. Checks which slots are already booked on that date
 // 3. Returns available time slots in natural language
 // ============================================================
