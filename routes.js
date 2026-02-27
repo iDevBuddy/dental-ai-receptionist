@@ -17,9 +17,32 @@
 
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 
 // Import Airtable functions (no OpenAI - we format responses directly for speed)
 const { getDoctors, checkAppointments, bookAppointment } = require('./airtable');
+
+
+// ============================================================
+// POST /start-call
+// Called by the demo website when user clicks "Talk to Sarah"
+// Creates a Retell web call and returns the access token
+// The browser uses this token to connect directly to Sarah
+// ============================================================
+router.post('/start-call', async (req, res) => {
+  try {
+    const response = await axios.post(
+      'https://api.retellai.com/v2/create-web-call',
+      { agent_id: process.env.RETELL_AGENT_ID },
+      { headers: { 'Authorization': `Bearer ${process.env.RETELL_API_KEY}` } }
+    );
+
+    res.json({ accessToken: response.data.access_token });
+  } catch (error) {
+    console.error('❌ Failed to create web call:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Could not start call. Please try again.' });
+  }
+});
 
 
 // ============================================================

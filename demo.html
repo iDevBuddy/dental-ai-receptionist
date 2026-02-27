@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dental Clinic AI Demo - Sarah</title>
+
+  <!-- Retell Web SDK from CDN - no install needed -->
+  <script src="https://cdn.jsdelivr.net/npm/@retellai/web-sdk@latest/dist/index.umd.js"></script>
+
+  <style>
+    /* ---- Page styling (your website will have its own, ignore this) ---- */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+    .hero {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .hero h1 { font-size: 2.5rem; font-weight: 300; margin-bottom: 16px; }
+    .hero p  { font-size: 1.1rem; opacity: 0.7; }
+
+    /* ============================================================
+       FLOATING DEMO BUTTON (bottom right - copy this to your site)
+       ============================================================ */
+
+    /* The floating widget container */
+    #sarah-widget {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 12px;
+      z-index: 9999;
+    }
+
+    /* Label card above the button (shows "Try Our Live Demo") */
+    #sarah-label {
+      background: rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    #sarah-label:hover { background: rgba(255,255,255,0.2); }
+
+    /* The glowing orb button */
+    #sarah-btn {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      position: relative;
+      background: linear-gradient(135deg, #667eea, #764ba2, #6B8DD6, #8E37D7);
+      background-size: 300% 300%;
+      animation: gradientShift 4s ease infinite;
+      box-shadow: 0 4px 24px rgba(102, 126, 234, 0.6);
+      transition: transform 0.2s, box-shadow 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #sarah-btn:hover {
+      transform: scale(1.08);
+      box-shadow: 0 6px 32px rgba(102, 126, 234, 0.8);
+    }
+    #sarah-btn:active { transform: scale(0.96); }
+
+    /* Ripple pulse when call is active */
+    #sarah-btn.active::before {
+      content: '';
+      position: absolute;
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      background: rgba(102, 126, 234, 0.4);
+      animation: ripple 1.5s ease-out infinite;
+    }
+
+    /* Mic icon inside the button */
+    #sarah-btn svg { width: 28px; height: 28px; fill: white; }
+
+    /* Status text under the widget */
+    #sarah-status {
+      color: rgba(255,255,255,0.7);
+      font-size: 0.78rem;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    /* End call button - shown during active call */
+    #sarah-end {
+      display: none;
+      background: rgba(239, 68, 68, 0.85);
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #sarah-end:hover { background: rgba(220, 38, 38, 0.95); }
+    #sarah-end.visible { display: block; }
+
+    /* Animations */
+    @keyframes gradientShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes ripple {
+      0%   { transform: scale(1); opacity: 0.6; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Your website content goes here -->
+  <div class="hero">
+    <h1>Dental Clinic AI Receptionist</h1>
+    <p>Click the button below to talk to Sarah, our AI receptionist.</p>
+  </div>
+
+  <!-- ============================================================
+       FLOATING SARAH WIDGET
+       Copy everything inside this div to your own website
+       Change SERVER_URL below to your Railway URL
+       ============================================================ -->
+  <div id="sarah-widget">
+    <div id="sarah-label" onclick="toggleCall()">Try Our Live Demo</div>
+    <button id="sarah-btn" onclick="toggleCall()" title="Talk to Sarah">
+      <!-- Mic icon -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
+      </svg>
+    </button>
+    <div id="sarah-status"></div>
+    <button id="sarah-end" onclick="endCall()">End Call</button>
+  </div>
+
+  <script>
+    // ============================================================
+    // IMPORTANT: Change this to your Railway server URL
+    // ============================================================
+    const SERVER_URL = 'https://web-production-855fd.up.railway.app';
+
+    // ---- Retell Web SDK setup ----
+    // RetellWebClient is loaded from the CDN script above
+    const retellClient = new RetellWebClient();
+
+    let callActive = false;
+
+    // UI elements
+    const btn     = document.getElementById('sarah-btn');
+    const status  = document.getElementById('sarah-status');
+    const endBtn  = document.getElementById('sarah-end');
+    const label   = document.getElementById('sarah-label');
+
+    // ---- Listen for call events ----
+    retellClient.on('call_started', () => {
+      callActive = true;
+      btn.classList.add('active');
+      status.textContent  = '🔴 Connected to Sarah';
+      label.textContent   = 'Speaking with Sarah...';
+      endBtn.classList.add('visible');
+    });
+
+    retellClient.on('call_ended', () => {
+      resetUI();
+    });
+
+    retellClient.on('error', (err) => {
+      console.error('Retell error:', err);
+      resetUI();
+      status.textContent = '⚠️ Connection error. Please try again.';
+    });
+
+    // ---- Start or stop the call ----
+    async function toggleCall() {
+      if (callActive) {
+        endCall();
+        return;
+      }
+
+      // Show connecting state
+      status.textContent  = 'Connecting...';
+      label.textContent   = 'Connecting...';
+      btn.style.opacity   = '0.7';
+      btn.disabled        = true;
+
+      try {
+        // Step 1: Get access token from our backend
+        const res = await fetch(`${SERVER_URL}/start-call`, { method: 'POST' });
+
+        if (!res.ok) throw new Error('Server error');
+
+        const { accessToken } = await res.json();
+
+        // Step 2: Start the call using Retell SDK
+        await retellClient.startCall({ accessToken });
+
+      } catch (err) {
+        console.error('Failed to start call:', err);
+        status.textContent = '⚠️ Could not connect. Is the server running?';
+        label.textContent  = 'Try Our Live Demo';
+        btn.style.opacity  = '1';
+        btn.disabled       = false;
+      }
+    }
+
+    // ---- End the call ----
+    function endCall() {
+      retellClient.stopCall();
+      resetUI();
+    }
+
+    // ---- Reset everything to default state ----
+    function resetUI() {
+      callActive            = false;
+      btn.classList.remove('active');
+      btn.style.opacity     = '1';
+      btn.disabled          = false;
+      status.textContent    = 'Call ended. Thanks!';
+      label.textContent     = 'Try Our Live Demo';
+      endBtn.classList.remove('visible');
+
+      // Clear status after 3 seconds
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    }
+  </script>
+
+</body>
+</html>
