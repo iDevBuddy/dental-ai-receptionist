@@ -76,42 +76,32 @@ function formatConfirmationFast({ patientName, doctor, date, time }) {
 // POST /webhook/retell
 // The main webhook endpoint - Retell AI sends everything here
 //
-// Retell sends different "event" types:
-//   - "tool_call_invocation" → Sarah wants data from us
-//   - "call_ended"           → call finished, good for logging
-//   - "call_started"         → call just connected
+// Retell sends TWO types of requests to this URL:
+//
+// 1. TOOL CALLS (when Sarah needs data from Airtable):
+//    { name: "check_availability", tool_call_id: "...", arguments: {...} }
+//    NOTE: NO "event" field for tool calls!
+//
+// 2. CALL LIFECYCLE EVENTS (started, ended):
+//    { event: "call_ended", call: { call_id, duration_ms, ... } }
 // ============================================================
 router.post('/webhook/retell', async (req, res) => {
   const body = req.body;
-  const event = body.event;
-
-  // If there's no event, something is wrong
-  if (!event) {
-    console.error('⚠️  Received request with no event type');
-    return res.status(400).json({ error: 'No event provided' });
-  }
-
-  console.log(`\n📞 Retell event received: "${event}"`);
-
 
   // ============================================================
   // HANDLE TOOL CALLS
-  // This is the main event - when Sarah needs data from us
-  // Retell sends ONE tool call at a time (unlike Vapi which batched them)
+  // Retell sends "name" field when it's a tool call
   // ============================================================
-  if (event === 'tool_call_invocation') {
-    const toolName = body.name;
-    const toolCallId = body.tool_call_id;
+  if (body.name) {
+    const toolName    = body.name;
+    const toolCallId  = body.tool_call_id;
+    const args        = body.arguments || {};
 
-    // Retell sends arguments as a plain object (already parsed - no JSON.parse needed)
-    const args = body.arguments || {};
-
-    console.log(`🔧 Tool: "${toolName}" | Args:`, args);
+    console.log(`\n🔧 Tool call: "${toolName}" | Args:`, args);
 
     let result = '';
 
     try {
-      // Route to the correct handler based on tool name
       if (toolName === 'check_availability') {
         result = await handleCheckAvailability(args);
 
@@ -119,21 +109,15 @@ router.post('/webhook/retell', async (req, res) => {
         result = await handleBookAppointment(args);
 
       } else {
-        // Unknown tool name
-        console.warn(`⚠️  Unknown tool called: ${toolName}`);
+        console.warn(`⚠️  Unknown tool: ${toolName}`);
         result = 'I apologize, I could not process that request. Please try again.';
       }
 
     } catch (error) {
-      // Something went wrong - tell Sarah gracefully
       console.error(`❌ Error in tool "${toolName}":`, error.message);
       result = 'I apologize, there was a technical issue. Let me transfer you to our staff.';
     }
 
-    // -------------------------------------------------------
-    // Retell response format for tool calls:
-    // { tool_call_id: "...", content: "the result string" }
-    // -------------------------------------------------------
     console.log(`✅ Returning result to Retell`);
     return res.json({
       tool_call_id: toolCallId,
@@ -143,35 +127,24 @@ router.post('/webhook/retell', async (req, res) => {
 
 
   // ============================================================
-  // HANDLE CALL ENDED
-  // Triggered when the call ends - good for logging/analytics
+  // HANDLE CALL LIFECYCLE EVENTS
+  // Retell sends "event" field for call started/ended
   // ============================================================
+  const event = body.event;
+
   if (event === 'call_ended') {
-    const call = body.call || {};
-    const callId = call.call_id || 'unknown';
-    const durationMs = call.duration_ms || 0;
-    const durationSec = Math.round(durationMs / 1000);
-
-    console.log(`\n📊 Call ended`);
-    console.log(`   Call ID:  ${callId}`);
-    console.log(`   Duration: ${durationSec} seconds`);
-
+    const call       = body.call || {};
+    const durationSec = Math.round((call.duration_ms || 0) / 1000);
+    console.log(`\n📊 Call ended | ID: ${call.call_id} | Duration: ${durationSec}s`);
     return res.json({ received: true });
   }
 
-
-  // ============================================================
-  // HANDLE CALL STARTED
-  // ============================================================
   if (event === 'call_started') {
-    const call = body.call || {};
-    console.log(`📞 New call started: ${call.call_id}`);
+    console.log(`\n📞 Call started: ${(body.call || {}).call_id}`);
     return res.json({ received: true });
   }
 
-
-  // For any other event type, just acknowledge it
-  console.log(`   (No handler for event "${event}", acknowledging)`);
+  // Anything else - just acknowledge
   res.json({ received: true });
 });
 
