@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dental Clinic AI Demo - Sarah</title>
 
-  <!-- Retell Web SDK from CDN - no install needed -->
-  <script src="https://cdn.jsdelivr.net/npm/@retellai/web-sdk@latest/dist/index.umd.js"></script>
+  <!-- No external script needed - SDK loaded inside the module script below -->
 
   <style>
     /* ---- Page styling (your website will have its own, ignore this) ---- */
@@ -155,14 +154,19 @@
     <button id="sarah-end" onclick="endCall()">End Call</button>
   </div>
 
-  <script>
+  <script type="module">
+    // ============================================================
+    // Retell Web SDK - loaded directly from CDN as ES module
+    // This is the correct way to use it in a plain HTML file
+    // ============================================================
+    import { RetellWebClient } from 'https://cdn.jsdelivr.net/npm/@retellai/web-sdk/+esm';
+
     // ============================================================
     // IMPORTANT: Change this to your Railway server URL
     // ============================================================
     const SERVER_URL = 'https://web-production-855fd.up.railway.app';
 
     // ---- Retell Web SDK setup ----
-    // RetellWebClient is loaded from the CDN script above
     const retellClient = new RetellWebClient();
 
     let callActive = false;
@@ -244,6 +248,11 @@
       // Clear status after 3 seconds
       setTimeout(() => { status.textContent = ''; }, 3000);
     }
+
+    // ---- Expose to global scope so onclick="toggleCall()" works ----
+    // ES modules are scoped — without this, onclick handlers can't find the functions
+    window.toggleCall = toggleCall;
+    window.endCall    = endCall;
   </script>
 
 </body>
